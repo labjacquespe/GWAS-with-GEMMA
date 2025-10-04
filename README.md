@@ -105,7 +105,7 @@ gemma -bfile data/dataset -k output/kinship.cXX.txt -lmm 4 -o gemma_lmm4 -outdir
 
 Custom R script to produce Manhattan plots, boxplot of top hits and add SNP annotations
 ```bash
-Rscript gwas_summary.R output/gemma_lmm4
+Rscript gwas_summary.R output/gemma_lmm4 data/phenotypes.txt
 ```
 
 

@@ -3,7 +3,9 @@ library(ggplot2)
 library(qqman)
 
 ### args
-gemma_prefix = commandArgs(trailingOnly = T)[1]
+args = commandArgs(trailingOnly = T)
+gemma_prefix = args[1]
+phenotype_file = args[2]
 
 ### open GEMMA associations file
 gemma_df = read.csv(paste0(gemma_prefix, ".assoc.txt"), sep="\t")
@@ -47,7 +49,7 @@ ggplot(gemma_df, aes(x=p_lrt)) + geom_histogram(bins=100)+ xlab("LRT p-value") +
 dev.off()
 
 ### Add SNPs annotations
-annotations = readRDS("data/annotations/SNP.EnsemblGenomes23.alleles.rds")
+annotations = readRDS("annotations/SNP.EnsemblGenomes23.alleles.rds")
 annotations$subtype = NULL
 annotated_df = merge(subset(gemma_df, p_lrt<0.05), annotations, by.x="rs", by.y="ID", all.x=T)
 write.table(annotated_df, file=paste0(gemma_prefix, ".asso_LRT05.tsv"), sep="\t", row.names=F, quote=F)
@@ -65,14 +67,15 @@ system(extract_geno_command2)
 
 
 ### plot top hits with boxplots
-pheno_df = read.csv("data/r_poisson_mix_ILRE_brm_GWAS_MB.csv", sep = ",", row.names=1)
+pheno_df = read.csv(phenotype_file, sep = "\t", row.names=1, header=F)
+colnames(pheno_df) = c("fam","ID","estimate")
 
 genotype_df = read.csv(paste0(gemma_prefix, ".tophits.doses.tsv"), sep = "\t", row.names = 1, check.names = F)
 snpid = rownames(genotype_df)
 genotype_df = data.frame(t(genotype_df))
 colnames(genotype_df) = snpid
 
-df = merge(pheno_df, genotype_df, by="row.names")
+df = merge(pheno_df, genotype_df, by.x=ID, by.y="row.names")
 
 cols <- c("0" = "grey90", "1" = "#820263", "2" = "grey40")
 
