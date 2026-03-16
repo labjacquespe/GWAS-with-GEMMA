@@ -18,8 +18,8 @@ Dependencies
 Python environment with h5py package to read genotypes
 ```bash
 ml python/3.11.5
-virtualenv --no-download --clear gemma
-source gemma/bin/activate
+virtualenv --no-download --clear pyenv
+source pyenv/bin/activate
 pip install --no-index h5py
 ```
 PLINK and R
@@ -40,16 +40,22 @@ wget https://aragwas.1001genomes.org/api/genotypes/download
 unzip download       # produce: GENOTYPES/4.hdf5
 ```
 
-1.2) Extract the SNPs from the GENOTYPES/4.hdf5 file using a custom python script 
+1.2) Extract the SNPs from the 4.hdf5 file using a custom python script 
 Extract the 5 chromosomes then concat them.
 ```bash
-python h5m2tsv.chr.py GENOTYPES/4.hdf5 1 > GENOTYPES/genotypes.aragwas.chr1.tsv
+data_directory=data/GENOTYPES
+sbatch extract_hdf5.sbatch 1:5 ${data_directory} # call h5m2tsv.chr.py
+
+tail -n+2 ${data_directory}/genotypes.aragwas.chr2.tsv | cat ${data_directory}/genotypes.aragwas.chr1.tsv - > ${data_directory}/genotypes.aragwas.allchr.tsv
+tail -n+2 ${data_directory}/genotypes.aragwas.chr3.tsv >> ${data_directory}/genotypes.aragwas.allchr.tsv
+tail -n+2 ${data_directory}/genotypes.aragwas.chr4.tsv >> ${data_directory}/genotypes.aragwas.allchr.tsv
+tail -n+2 ${data_directory}/genotypes.aragwas.chr5.tsv >> ${data_directory}/genotypes.aragwas.allchr.tsv
 ```
 
 1.3) Transform to VCF format
 The script takes a list of samples/lines to keep them remove SNPs with minor allele count of zero.
 ```bash
-python create_vcf.py GENOTYPES/genotypes.aragwas.allchr.tsv data/included_samples.txt data/aragwas.genotypes_384.mac1.vcf.gz
+python create_vcf.py ${data_directory}/genotypes.aragwas.allchr.tsv data/included_samples.txt data/aragwas.genotypes_384.homozygote.vcf.gz
 ```
 
 
@@ -58,14 +64,14 @@ python create_vcf.py GENOTYPES/genotypes.aragwas.allchr.tsv data/included_sample
 2.1) Convert to PLINK 
 ```bash
 plink2 --memory 10000 \
-  --vcf data/aragwas.genotypes_384.mac1.vcf.gz \
+  --vcf data/aragwas.genotypes_384.homozygote.vcf.gz \
   --make-bed \
-  --out data/aragwas.genotypes_384.mac1
+  --out data/aragwas.genotypes_384.homozygote
 ```
 2.2) Add phenotype
 ```bash
 plink2 --memory 10000 \
-  --bfile data/aragwas.genotypes_384.mac1 \
+  --bfile data/aragwas.genotypes_384.homozygote \
   --make-bed \
   --pheno data/phenotypes.txt \
   --out data/dataset  
@@ -75,11 +81,7 @@ plink2 --memory 10000 \
 --freq will produce a report of minor allele frequencies
 --hardy will produce a report of Hardy-Weinberg equilibrium
 ```bash
-plink2 --bfile data/dataset \
-  --freq \
-  --hardy \
-  --out data/dataset_stats 
-  
+plink2 --bfile data/dataset --freq --hardy --out data/dataset_stats 
 awk '$6>0.01' data/dataset_stats.afreq | wc -l
 ```
 
@@ -92,7 +94,6 @@ To estimate centered relationship, use the -gk1 parameters (details in section 4
 gemma -bfile data/dataset -gk 1 -r2 1.0 -o kinship -outdir output
 ```
 
-
 ### 4) Run LLM
 Running GWAS with GEMMA, the frequentist test to use is optional (details in section 4.6 of manual):
 * -lmm 1 performs Wald test
@@ -100,12 +101,7 @@ Running GWAS with GEMMA, the frequentist test to use is optional (details in sec
 * -lmm 3 performs score test
 * -lmm 4 performs all the three tests
 ```bash
-gemma -bfile data/dataset -k output/kinship.cXX.txt -lmm 4 -o gemma_lmm4 -outdir output
-```
-
-Custom R script to produce Manhattan plots, boxplot of top hits and add SNP annotations
-```bash
-Rscript gwas_summary.R output/gemma_lmm4 data/phenotypes.txt
+gemma -bfile data/dataset -k output/kinship.cXX.txt -lmm 4 -o lmm -outdir lmm/default
 ```
 
 
@@ -116,11 +112,35 @@ Which model to fit (details in section 4.8 of manual):
 * -bslmm 2 fits a ridge regression/GBLUP with standard non-MCMC method
 * -bslmm 3 fits a probit BSLMM using MCMC
 ```bash
-gemma -bfile data/dataset -bslmm 1 -o gemma_bslmm -outdir output
+gemma -bfile data/dataset -bslmm 1 -o bslmm -outdir bslmm/default
+gemma -bfile data/dataset -bslmm 1 -w 2500000 -s 10000000 -rpace 100 -seed 1 -o chain1 -outdir bslmm/additional_iterations
+```
+
+
+### 6) Annotations
+
+```bash
+bash create_annotations.sh
+```
+
+Custom R script to produce Manhattan plots, boxplot of top hits and add SNP annotations
+```bash
+Rscript summary_lmm.R <output_prefix> <phenotypes>
+Rscript summary_lmm.R lmm/default/lmm data/dataset.fam
+Rscript summary_lmm.R lmm/adjusted_output/lmm data/dataset.fam
+```
+
+```bash
+awk '{OFS="\t"; print $1,$3,$7,$14}' lmm/default/lmm.assoc.txt > table4.tsv
+awk '{OFS="\t"; print $1,$3,$7,$14}' lmm/adjusted_output/lmm.assoc.txt > table5.tsv
 ```
 
 Custom R script to compute posterior inclusion probabilities (PIP)
 ```bash
-Rscript bslmm_summary.R output/gemma_bslmm
+Rscript summary_bslmm.R bslmm/default
 ```
 
+Custom R script to aggregate chains and compute posterior inclusion probabilities (PIP) across chains
+```bash
+Rscript aggregate_bslmm.R bslmm/additional_iterations/chain
+```

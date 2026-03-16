@@ -7,6 +7,9 @@ args = commandArgs(trailingOnly = T)
 gemma_prefix = args[1]
 phenotype_file = args[2]
 
+annotations_file = "annotations/annotations.len.tsv.gz"
+
+
 ### open GEMMA associations file
 gemma_df = read.csv(paste0(gemma_prefix, ".assoc.txt"), sep="\t")
 
@@ -26,17 +29,17 @@ cat(" * ", nrow(subset(gemma_df, p_lrt<0.001)), " SNPs at p<0.001\n")
 cat(" * ", nrow(subset(gemma_df, qval<0.05)), " SNPs at q<0.05\n")
 
 ### Manhattan plots
-png(paste0(gemma_prefix, ".manhattan_Wald.png"), width = 1000, height = 400)
-manhattan(gemma_df, chr="chr", bp="ps", snp="rs", p="p_wald", suggestiveline=-log10(bonf_threshold), genomewideline=F, main="Wald test")
-dev.off()
+#png(paste0(gemma_prefix, ".manhattan_Wald.png"), width = 1000, height = 400)
+#manhattan(gemma_df, chr="chr", bp="ps", snp="rs", p="p_wald", suggestiveline=-log10(bonf_threshold), genomewideline=F, main="Wald test")
+#dev.off()
 
 png(paste0(gemma_prefix,".manhattan_likelihoodratio.png"), width = 1000, height = 400)
 manhattan(gemma_df, chr="chr", bp="ps", snp="rs", p="p_lrt", suggestiveline=-log10(bonf_threshold), genomewideline=F, main="likelihood ratio test")
 dev.off()
 
-png(paste0(gemma_prefix, ".manhattan_score.png"), width = 1000, height = 400)
-manhattan(gemma_df, chr="chr", bp="ps", snp="rs", p="p_score", suggestiveline=-log10(bonf_threshold), genomewideline=F, main="Score test")
-dev.off()
+#png(paste0(gemma_prefix, ".manhattan_score.png"), width = 1000, height = 400)
+#manhattan(gemma_df, chr="chr", bp="ps", snp="rs", p="p_score", suggestiveline=-log10(bonf_threshold), genomewideline=F, main="Score test")
+#dev.off()
 
 ### plot distributions
 pdf(paste0(gemma_prefix, ".distribution.pdf"), width = 3, height = 3)
@@ -49,10 +52,27 @@ ggplot(gemma_df, aes(x=p_lrt)) + geom_histogram(bins=100)+ xlab("LRT p-value") +
 dev.off()
 
 ### Add SNPs annotations
-#annotations = readRDS("annotations/SNP.EnsemblGenomes23.alleles.rds")
-annotations = readRDS("annotations/complete_annotations.rds")
-annotated_df = merge(subset(gemma_df, p_lrt<0.05), annotations, by="rs", all.x=T)
-write.table(annotated_df, file=paste0(gemma_prefix, ".asso_LRT05.tsv"), sep="\t", row.names=F, quote=F)
+signif_gemma_df = subset(gemma_df, qval<0.05)
+write.table(signif_gemma_df$rs, file=paste0(gemma_prefix, "_snp_list.txt"), sep="\t", row.names=F, quote=F, col.names=F)
+shell_command_extract_annotation = paste0("zgrep -wf ",gemma_prefix,"_snp_list.txt ",annotations_file," > " ,gemma_prefix,"_tmp.tsv")
+system(shell_command_extract_annotation)
+annotation_df = read.csv(paste0(gemma_prefix,"_tmp.tsv"), sep = "\t", header=F)
+colnames(annotation_df) = c("rs","region",
+	"L_gene","L_tss_distance","L_length","L_start","L_end","L_name","L_type","L_description","L_strand",
+	"R_gene","R_tss_distance","R_length","R_start","R_end","R_name","R_type","R_description","R_strand",
+	"subtype","ref","alt")
+
+
+signif_gemma_df = merge(signif_gemma_df, annotation_df, by="rs", all.x=T)
+signif_gemma_df = cbind(SNP=paste0(signif_gemma_df$rs,":",signif_gemma_df$ref,":",signif_gemma_df$alt), signif_gemma_df)
+signif_gemma_df$rs = signif_gemma_df$ref = signif_gemma_df$alt = signif_gemma_df$chr = signif_gemma_df$ps = signif_gemma_df$p_wald = signif_gemma_df$p_score = NULL
+write.table(signif_gemma_df, file=paste0(gemma_prefix, ".asso.FDR.tsv"), sep="\t", row.names=F, quote=F)
+
+
+
+
+
+stop()
 
 ### List FDR significant SNPs
 top_hits = subset(gemma_df, qval < 0.05)
@@ -67,11 +87,9 @@ system(extract_geno_command2)
 
 
 ### plot top hits with boxplots
-pheno_df = read.csv(phenotype_file, sep = "\t", header=F)
+pheno_df = read.csv(phenotype_file, sep = "\t", header=F)[, c(1,2,6)] # plink.fam
 colnames(pheno_df) = c("fam","ID","estimate")
-print("okay pheno")
 genotype_df = read.csv(paste0(gemma_prefix, ".tophits.doses.tsv"), sep = "\t", row.names = 1, check.names = F)
-print("okay geno")
 snpid = rownames(genotype_df)
 genotype_df = data.frame(t(genotype_df))
 colnames(genotype_df) = snpid
@@ -88,3 +106,6 @@ for (hit in top_top_hits){
 		theme(legend.position = "none", plot.title = element_text(color="black", size=10, face="bold")))
 }
 dev.off()
+
+shell_command_rm_tmp_file = paste0("rm ", gemma_prefix,"_snp_list.txt ",gemma_prefix,"_tmp.tsv ", gemma_prefix,".tophits.log ", gemma_prefix,".tophits.traw ", gemma_prefix,".tophits.doses.tsv ")
+system(shell_command_rm_tmp_file)
