@@ -15,8 +15,9 @@ Dependencies
 - Python 3
 - PLINK2
 - R
-- 
+  
 Python environment with the h5py package to read genotypes
+(see *pyenv_requirements.txt*) 
 ```bash
 ml python/3.11.5
 virtualenv --no-download --clear pyenv
