@@ -102,6 +102,8 @@ Running GWAS with GEMMA, the frequentist test to use is optional (details in sec
 * -lmm 2 performs likelihood ratio test
 * -lmm 3 performs score test
 * -lmm 4 performs all the three tests
+
+By default in GEMMA, SNPs with minor allele frequency below 1% will not be included in the analysis 
 ```bash
 gemma -bfile data/dataset -k output/kinship.cXX.txt -lmm 4 -o lmm -outdir lmm/default
 ```
